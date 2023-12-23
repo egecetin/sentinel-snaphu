@@ -22,5 +22,5 @@ jobs:
       - name: Push to DockerHub
         run: |
           echo ${{ secrets.DOCKER_PASS }} | docker login -u ${{ secrets.DOCKER_USER }} --password-stdin
-          docker push egecetinn/${{ matrix.image }}:latest
+          docker push egecetinn/sentinel-snaphu:latest
         if: ${{ !github.event.pull_request.head.repo.fork && github.ref == 'refs/heads/main' }}
