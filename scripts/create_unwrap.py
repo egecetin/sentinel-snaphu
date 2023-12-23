@@ -139,6 +139,7 @@ def update_xml(filename1: str, filename2: str) -> None:
     tree.write("presnaphuexport.xml")
 
     # Parse the snaphu XML file
+    # It should be separate file Ref: https://forum.step.esa.int/t/snaphu-export-does-not-generate-a-corrfile/27663/36
     tree = xml.etree.ElementTree.parse("TOPSAR_SnaphuExport.xml")
     root = tree.getroot()
 
