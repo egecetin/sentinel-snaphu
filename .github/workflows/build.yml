@@ -1,0 +1,26 @@
+name: Docker Image CI
+on: push
+
+concurrency:
+  group: ${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v3
+
+      - name: Build image
+        run: |
+          docker build . --file Dockerfile --tag egecetinn/sentinel-snaphu:latest
+
+      - name: Push to DockerHub
+        run: |
+          echo ${{ secrets.DOCKER_PASS }} | docker login -u ${{ secrets.DOCKER_USER }} --password-stdin
+          docker push egecetinn/${{ matrix.image }}:latest
+        if: ${{ !github.event.pull_request.head.repo.fork && github.ref == 'refs/heads/main' }}

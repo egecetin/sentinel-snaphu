@@ -1,0 +1,4 @@
+matplotlib
+numpy
+onedrive-sharepoint-python-sdk
+psutil
