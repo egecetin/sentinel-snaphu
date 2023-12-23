@@ -7,7 +7,6 @@ ENV TZ=US/Pacific
 RUN ln -snf /usr/share/zoneinfo/$TZ /etc/localtime && echo $TZ > /etc/timezone
 
 # Copy required local files
-COPY response.varfile /home/
 COPY data/* /home/
 COPY scripts/* /home/
 
