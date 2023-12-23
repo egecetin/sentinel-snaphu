@@ -1,6 +1,6 @@
 #!/bin/bash
 
-sudo apt-get update && apt-get upgrade -y && apt-get install -y \
+sudo apt-get update && apt-get install -y \
     python3-dev \
     python3-pip \
     snaphu \
