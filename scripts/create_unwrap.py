@@ -170,7 +170,7 @@ def process() -> None:
 
     # Pre-process
     log_file = open("gpt.log", "w")
-    result = subprocess.run(["gpt", "presnaphuexport.xml"], stdout=log_file)
+    result = subprocess.run(["/usr/local/snap/bin/gpt", "presnaphuexport.xml"], stdout=log_file)
     log_file.flush()
 
     if result.returncode != 0:
@@ -179,7 +179,7 @@ def process() -> None:
     logging.info("Pre-process completed! Exporting snaphu ...")
 
     # Export snaphu
-    result = subprocess.run(["gpt", "snaphuexport.xml"], stdout=log_file)
+    result = subprocess.run(["/usr/local/snap/bin/gpt", "snaphuexport.xml"], stdout=log_file)
     log_file.close()
 
     if result.returncode != 0:
