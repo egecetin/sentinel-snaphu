@@ -92,10 +92,12 @@ def get_file(data_id, access_token):
 def download_products(
     username: str, password: str, filename1: str, filename2: str
 ) -> None:
-    logging.info("Starting to download files ...")
+    logging.info("Getting token ...")
     token = get_access_token(username, password)
+    logging.info("Token get!")
 
     # Download files
+    logging.info("Starting to download files ...")
     args = [[filename1, token], [filename2, token]]
     pool = multiprocessing.Pool()
     pool.starmap(get_file, args)
@@ -107,8 +109,8 @@ def download_products(
 def update_xml(filename1: str, filename2: str) -> None:
     logging.info("Preparing processing parameters ...")
 
-    # Parse the XML file
-    tree = xml.etree.ElementTree.parse("TOPSAR_SnaphuExportIWAllSwaths.xml")
+    # Parse and update the pre-process XML file
+    tree = xml.etree.ElementTree.parse("TOPSAR_PreSnaphuExportIWAllSwaths.xml")
     root = tree.getroot()
 
     for elem in root.findall("node"):
@@ -131,10 +133,32 @@ def update_xml(filename1: str, filename2: str) -> None:
                 params.find("targetFolder").text = targetFolder
             else:
                 raise Exception(
-                    "This shouldn't happen! elem id neither Read nor Read(2)"
+                    "This shouldn't happen! elem id none of the Read, Read(2), Write or SnaphuExport"
                 )
 
-    # Write the modified tree to a new XML file
+    tree.write("presnaphuexport.xml")
+
+    # Parse the snaphu XML file
+    tree = xml.etree.ElementTree.parse("TOPSAR_SnaphuExport.xml")
+    root = tree.getroot()
+
+    for elem in root.findall("node"):
+        if elem.get("id") in ["Read", "SnaphuExport"]:
+            params = elem.find("parameters")
+            if elem.get("id") == "Read":
+                params.find("file").text = (
+                    temp_dir + "/output/" + "Orb_Stack_Ifg_Deb_DInSAR_mrg_ML_Flt.dim"
+                )
+            elif elem.get("id") == "SnaphuExport":
+                targetFolder = temp_dir + "/" + "snaphu_export/"
+                os.makedirs(targetFolder, exist_ok=True)
+                params = elem.find("parameters")
+                params.find("targetFolder").text = targetFolder
+            else:
+                raise Exception(
+                    "This shouldn't happen! elem id neither Read nor SnaphuExport"
+                )
+
     tree.write("snaphuexport.xml")
 
     logging.info("XMLs updated!")
@@ -143,7 +167,17 @@ def update_xml(filename1: str, filename2: str) -> None:
 def process() -> None:
     logging.info("Starting to process ...")
 
-    log_file = open("gpt.log","w")
+    # Pre-process
+    log_file = open("gpt.log", "w")
+    result = subprocess.run(["gpt", "presnaphuexport.xml"], stdout=log_file)
+    log_file.flush()
+
+    if result.returncode != 0:
+        logging.error(f"GPT returned error code {result.returncode}")
+        return
+    logging.info("Pre-process completed! Exporting snaphu ...")
+
+    # Export snaphu
     result = subprocess.run(["gpt", "snaphuexport.xml"], stdout=log_file)
     log_file.close()
 
@@ -156,7 +190,7 @@ def process() -> None:
     file_snaphu = open(temp_dir + "/" + "snaphu_export/snaphu.conf", "r")
     lines = file_snaphu.readlines()
 
-    log_file = open("snaphu.log","w")
+    log_file = open("snaphu.log", "w")
     result = subprocess.run(lines[6].replace("#", "").strip(), stdout=log_file)
     log_file.close()
 

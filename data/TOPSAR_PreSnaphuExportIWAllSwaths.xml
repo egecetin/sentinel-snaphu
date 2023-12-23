@@ -5,7 +5,7 @@
     <sources/>
     <parameters class="com.bc.ceres.binding.dom.XppDomElement">
       <useAdvancedOptions>false</useAdvancedOptions>
-      <file></file>
+      <file>file1</file>
       <copyMetadata>true</copyMetadata>
       <bandNames/>
       <pixelRegion>0,0,73462,15199</pixelRegion>
@@ -17,7 +17,7 @@
     <sources/>
     <parameters class="com.bc.ceres.binding.dom.XppDomElement">
       <useAdvancedOptions>false</useAdvancedOptions>
-      <file></file>
+      <file>file2</file>
       <copyMetadata>true</copyMetadata>
       <bandNames/>
       <pixelRegion>0,0,73463,15199</pixelRegion>
@@ -301,23 +301,6 @@
       <coherenceThreshold>0.2</coherenceThreshold>
     </parameters>
   </node>
-  <node id="SnaphuExport">
-    <operator>SnaphuExport</operator>
-    <sources>
-      <sourceProduct refid="GoldsteinPhaseFiltering"/>
-    </sources>
-    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
-      <targetFolder></targetFolder>
-      <statCostMode>DEFO</statCostMode>
-      <initMethod>MST</initMethod>
-      <numberOfTileRows>10</numberOfTileRows>
-      <numberOfTileCols>10</numberOfTileCols>
-      <numberOfProcessors>48</numberOfProcessors>
-      <rowOverlap>200</rowOverlap>
-      <colOverlap>200</colOverlap>
-      <tileCostThreshold>500</tileCostThreshold>
-    </parameters>
-  </node>
   <node id="Multilook">
     <operator>Multilook</operator>
     <sources>
@@ -385,7 +368,7 @@
       <sourceProduct refid="GoldsteinPhaseFiltering"/>
     </sources>
     <parameters class="com.bc.ceres.binding.dom.XppDomElement">
-      <file></file>
+      <file>file3</file>
       <formatName>BEAM-DIMAP</formatName>
     </parameters>
   </node>
@@ -454,9 +437,6 @@
     <node id="GoldsteinPhaseFiltering">
       <displayPosition x="1013.0" y="135.0"/>
     </node>
-    <node id="SnaphuExport">
-      <displayPosition x="1172.0" y="135.0"/>
-    </node>
     <node id="Multilook">
       <displayPosition x="933.0" y="136.0"/>
     </node>
@@ -470,7 +450,7 @@
       <displayPosition x="637.0" y="252.0"/>
     </node>
     <node id="Write">
-      <displayPosition x="1054.0" y="177.0"/>
+      <displayPosition x="1171.0" y="135.0"/>
     </node>
   </applicationData>
 </graph>
