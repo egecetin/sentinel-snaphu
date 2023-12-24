@@ -308,7 +308,7 @@
     </sources>
     <parameters class="com.bc.ceres.binding.dom.XppDomElement">
       <sourceBands/>
-      <nRgLooks>4</nRgLooks>
+      <nRgLooks>6</nRgLooks>
       <nAzLooks>1</nAzLooks>
       <outputIntensity>false</outputIntensity>
       <grSquarePixel>true</grSquarePixel>

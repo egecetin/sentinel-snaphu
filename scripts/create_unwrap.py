@@ -11,6 +11,7 @@ import time
 import traceback
 import xml.etree.ElementTree
 
+import msal
 from msdrive import OneDrive
 
 
@@ -24,9 +25,8 @@ def parse_args() -> None:
     parser.add_argument(
         "--passwd", "-p", type=str, help="Copernicus Open Access Hub password"
     )
-    parser.add_argument(
-        "--token", "-t", type=str, help="Microsoft Onedrive access token"
-    )
+    parser.add_argument("--tenant", "-t", type=str, help="Microsoft Onedrive tenant ID")
+    parser.add_argument("--client", "-c", type=str, help="Microsoft Onedrive client ID")
     parser.add_argument(
         "--work-dir", "-w", type=str, help="Working directory to use as a temp storage"
     )
@@ -35,12 +35,12 @@ def parse_args() -> None:
 
 
 class ProcessWithException(multiprocessing.Process):
-    def __init__(self, *args, **kwargs):
+    def __init__(self, *args, **kwargs) -> None:
         multiprocessing.Process.__init__(self, *args, **kwargs)
         self._parent_conn, self._child_conn = multiprocessing.Pipe()
         self._exception = None
 
-    def run(self):
+    def run(self) -> None:
         try:
             multiprocessing.Process.run(self)
             self._child_conn.send(None)
@@ -55,196 +55,225 @@ class ProcessWithException(multiprocessing.Process):
         return self._exception
 
 
-def get_access_token(username: str, password: str) -> str:
-    data = {
-        "client_id": "cdse-public",
-        "username": username,
-        "password": password,
-        "grant_type": "password",
-    }
-    try:
-        r = requests.post(
-            "https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token",
-            data=data,
-        )
-        r.raise_for_status()
-    except Exception as e:
-        raise Exception(
-            f"Access token creation failed. Response from the server was: {r.json()}"
-        )
-    return r.json()["access_token"]
+class Copernicus:
+    def __init__(self, username: str, password: str) -> None:
+        logging.info("Getting token from Copernicus ...")
+        self.token = self.__get_access_token(username, password)
+        logging.info("Token get!")
+
+    def __get_access_token(username: str, password: str) -> str:
+        data = {
+            "client_id": "cdse-public",
+            "username": username,
+            "password": password,
+            "grant_type": "password",
+        }
+        try:
+            r = requests.post(
+                "https://identity.dataspace.copernicus.eu/auth/realms/CDSE/protocol/openid-connect/token",
+                data=data,
+            )
+            r.raise_for_status()
+        except Exception as e:
+            raise Exception(
+                f"Access token creation failed. Response from the server was: {r.json()}"
+            )
+        return r.json()["access_token"]
+
+    def __get_file(self, data_id) -> None:
+        url = f"https://zipper.dataspace.copernicus.eu/odata/v1/Products({data_id})/$value"
+        headers = {"Authorization": f"Bearer {self.access_token}"}
+
+        session = requests.Session()
+        session.headers.update(headers)
+        response = session.get(url, headers=headers, stream=True)
+
+        with open(data_id, "wb") as file:
+            for chunk in response.iter_content(chunk_size=8192):
+                if chunk:
+                    file.write(chunk)
+
+    def download_products(self, filename1: str, filename2: str) -> None:
+        logging.info("Starting to download files ...")
+        args = [[filename1, self.token], [filename2, self.token]]
+        pool = multiprocessing.Pool()
+        pool.starmap(self.__get_file, args)
+        pool.close()
+        logging.info("Files downloaded!")
 
 
-def get_file(data_id, access_token):
-    url = f"https://zipper.dataspace.copernicus.eu/odata/v1/Products({data_id})/$value"
-    headers = {"Authorization": f"Bearer {access_token}"}
+class Process:
+    def __init__(self, filename1: str, filename2: str) -> None:
+        logging.info("Preparing processing parameters ...")
+        self.__update_xml(filename1, filename2)
+        logging.info("XMLs updated!")
 
-    session = requests.Session()
-    session.headers.update(headers)
-    response = session.get(url, headers=headers, stream=True)
+    def __update_xml(filename1: str, filename2: str) -> None:
+        # Parse and update the pre-process XML file
+        tree = xml.etree.ElementTree.parse("TOPSAR_PreSnaphuExportIWAllSwaths.xml")
+        root = tree.getroot()
 
-    with open(data_id, "wb") as file:
-        for chunk in response.iter_content(chunk_size=8192):
-            if chunk:
-                file.write(chunk)
-
-
-def download_products(
-    username: str, password: str, filename1: str, filename2: str
-) -> None:
-    logging.info("Getting token ...")
-    token = get_access_token(username, password)
-    logging.info("Token get!")
-
-    # Download files
-    logging.info("Starting to download files ...")
-    args = [[filename1, token], [filename2, token]]
-    pool = multiprocessing.Pool()
-    pool.starmap(get_file, args)
-    pool.close()
-
-    logging.info("Files downloaded!")
-
-
-def update_xml(filename1: str, filename2: str) -> None:
-    logging.info("Preparing processing parameters ...")
-
-    # Parse and update the pre-process XML file
-    tree = xml.etree.ElementTree.parse("TOPSAR_PreSnaphuExportIWAllSwaths.xml")
-    root = tree.getroot()
-
-    for elem in root.findall("node"):
-        if elem.get("id") in ["Read", "Read(2)", "Write", "SnaphuExport"]:
-            params = elem.find("parameters")
-            if elem.get("id") == "Read":
-                params.find("file").text = temp_dir + "/" + filename1
-            elif elem.get("id") == "Read(2)":
-                params.find("file").text = temp_dir + "/" + filename2
-            elif elem.get("id") == "Write":
-                targetFolder = temp_dir + "/output/"
-                os.makedirs(targetFolder, exist_ok=True)
-                params.find("file").text = (
-                    temp_dir + "/output/" + "Orb_Stack_Ifg_Deb_DInSAR_mrg_ML_Flt.dim"
-                )
-            elif elem.get("id") == "SnaphuExport":
-                targetFolder = temp_dir + "/" + "snaphu_export/"
-                os.makedirs(targetFolder, exist_ok=True)
+        for elem in root.findall("node"):
+            if elem.get("id") in ["Read", "Read(2)", "Write", "SnaphuExport"]:
                 params = elem.find("parameters")
-                params.find("targetFolder").text = targetFolder
-            else:
-                raise Exception(
-                    "This shouldn't happen! elem id none of the Read, Read(2), Write or SnaphuExport"
-                )
+                if elem.get("id") == "Read":
+                    params.find("file").text = temp_dir + "/" + filename1
+                elif elem.get("id") == "Read(2)":
+                    params.find("file").text = temp_dir + "/" + filename2
+                elif elem.get("id") == "Write":
+                    targetFolder = temp_dir + "/output/"
+                    os.makedirs(targetFolder, exist_ok=True)
+                    params.find("file").text = (
+                        temp_dir
+                        + "/output/"
+                        + "Orb_Stack_Ifg_Deb_DInSAR_mrg_ML_Flt.dim"
+                    )
+                elif elem.get("id") == "SnaphuExport":
+                    targetFolder = temp_dir + "/" + "snaphu_export/"
+                    os.makedirs(targetFolder, exist_ok=True)
+                    params = elem.find("parameters")
+                    params.find("targetFolder").text = targetFolder
+                else:
+                    raise Exception(
+                        "This shouldn't happen! elem id none of the Read, Read(2), Write or SnaphuExport"
+                    )
 
-    tree.write("presnaphuexport.xml")
+        tree.write("presnaphuexport.xml")
 
-    # Parse the snaphu XML file
-    # It should be separate file Ref: https://forum.step.esa.int/t/snaphu-export-does-not-generate-a-corrfile/27663/36
-    tree = xml.etree.ElementTree.parse("TOPSAR_SnaphuExport.xml")
-    root = tree.getroot()
+        # Parse the snaphu XML file
+        # It should be separate file Ref: https://forum.step.esa.int/t/snaphu-export-does-not-generate-a-corrfile/27663/36
+        tree = xml.etree.ElementTree.parse("TOPSAR_SnaphuExport.xml")
+        root = tree.getroot()
 
-    for elem in root.findall("node"):
-        if elem.get("id") in ["Read", "SnaphuExport"]:
-            params = elem.find("parameters")
-            if elem.get("id") == "Read":
-                params.find("file").text = (
-                    temp_dir + "/output/" + "Orb_Stack_Ifg_Deb_DInSAR_mrg_ML_Flt.dim"
-                )
-            elif elem.get("id") == "SnaphuExport":
-                targetFolder = temp_dir + "/" + "snaphu_export/"
-                os.makedirs(targetFolder, exist_ok=True)
+        for elem in root.findall("node"):
+            if elem.get("id") in ["Read", "SnaphuExport"]:
                 params = elem.find("parameters")
-                params.find("targetFolder").text = targetFolder
-            else:
-                raise Exception(
-                    "This shouldn't happen! elem id neither Read nor SnaphuExport"
-                )
+                if elem.get("id") == "Read":
+                    params.find("file").text = (
+                        temp_dir
+                        + "/output/"
+                        + "Orb_Stack_Ifg_Deb_DInSAR_mrg_ML_Flt.dim"
+                    )
+                elif elem.get("id") == "SnaphuExport":
+                    targetFolder = temp_dir + "/" + "snaphu_export/"
+                    os.makedirs(targetFolder, exist_ok=True)
+                    params = elem.find("parameters")
+                    params.find("targetFolder").text = targetFolder
+                else:
+                    raise Exception(
+                        "This shouldn't happen! elem id neither Read nor SnaphuExport"
+                    )
 
-    tree.write("snaphuexport.xml")
+        tree.write("snaphuexport.xml")
 
-    logging.info("XMLs updated!")
+    def process() -> None:
+        logging.info("Starting to process ...")
 
+        # Pre-process
+        log_file = open("gpt.log", "w")
+        result = subprocess.run(
+            ["/usr/local/snap/bin/gpt", "presnaphuexport.xml"], stdout=log_file
+        )
+        log_file.flush()
 
-def process() -> None:
-    logging.info("Starting to process ...")
+        if result.returncode != 0:
+            logging.error(f"GPT returned error code {result.returncode}")
+            return
+        logging.info("Pre-process completed! Exporting snaphu ...")
 
-    # Pre-process
-    log_file = open("gpt.log", "w")
-    result = subprocess.run(["/usr/local/snap/bin/gpt", "presnaphuexport.xml"], stdout=log_file)
-    log_file.flush()
+        # Export snaphu
+        result = subprocess.run(
+            ["/usr/local/snap/bin/gpt", "snaphuexport.xml"], stdout=log_file
+        )
+        log_file.close()
 
-    if result.returncode != 0:
-        logging.error(f"GPT returned error code {result.returncode}")
-        return
-    logging.info("Pre-process completed! Exporting snaphu ...")
+        if result.returncode != 0:
+            logging.error(f"GPT returned error code {result.returncode}")
+            return
+        logging.info("Snaphu exported! Starting to unwrap ...")
 
-    # Export snaphu
-    result = subprocess.run(["/usr/local/snap/bin/gpt", "snaphuexport.xml"], stdout=log_file)
-    log_file.close()
+        # Read snaphu command from config
+        file_snaphu = open(temp_dir + "/" + "snaphu_export/snaphu.conf", "r")
+        lines = file_snaphu.readlines()
 
-    if result.returncode != 0:
-        logging.error(f"GPT returned error code {result.returncode}")
-        return
-    logging.info("Snaphu exported! Starting to unwrap ...")
+        log_file = open("snaphu.log", "w")
+        result = subprocess.run(lines[6].replace("#", "").strip(), stdout=log_file)
+        log_file.close()
 
-    # Read snaphu command from config
-    file_snaphu = open(temp_dir + "/" + "snaphu_export/snaphu.conf", "r")
-    lines = file_snaphu.readlines()
+        if result.returncode != 0:
+            logging.error(f"Unwrap returned error code {result.returncode}")
+            return
+        logging.info("Unwrap complete! Moving data ...")
 
-    log_file = open("snaphu.log", "w")
-    result = subprocess.run(lines[6].replace("#", "").strip(), stdout=log_file)
-    log_file.close()
+        shutil.move(lines[26].split()[1], "output/" + lines[26].split()[1])
+        logging.info("Data moved to output folder!")
 
-    if result.returncode != 0:
-        logging.error(f"Unwrap returned error code {result.returncode}")
-        return
-    logging.info("Unwrap complete! Moving data ...")
-
-    shutil.move(lines[26].split()[1], "output/" + lines[26].split()[1])
-    logging.info("Data moved to output folder!")
-
-    logging.info("Process complete!")
-
-
-def upload_file(drive: str, local_path: str, remote_path: str) -> None:
-    drive.upload_item(item_path=remote_path, file_path=local_path)
-    logging.info(f"Uploaded {local_path} to {remote_path}")
+        logging.info("Process complete!")
 
 
-def upload_results(token: str, local_path: str, onedrive_path: str, flag) -> None:
-    logging.info("Uploading files ...")
+class MSOnedrive:
+    def __init__(self, tenant: str, client: str) -> None:
+        logging.info("Getting token from Onedrive ...")
+        token = self.__get_access_token(tenant, client)
+        logging.info("Token get!")
 
-    drive = OneDrive(token)
+        self.drive_app = OneDrive(token)
 
-    # Get list of files
-    files = os.listdir(local_path)
-    args = [(drive, os.path.join(local_path, file), onedrive_path) for file in files]
+    def __get_access_token(tenant: str, client: str) -> str:
+        app = msal.PublicClientApplication(
+            authority=("https://login.microsoftonline.com/" + tenant), client_id=client
+        )
 
-    # Upload files
-    pool = multiprocessing.Pool()
-    pool.starmap(upload_file, args)
-    pool.close()
+        flow = app.initiate_device_flow(scopes=["Files.Read.All"])
+        result = app.acquire_token_by_device_flow(flow)
 
-    logging.info("All files uploaded")
+        if "access_token" in result:
+            return result["access_token"]
+        else:
+            raise Exception(result["error"])
 
-    with flag.get_lock():
-        flag.value = True
-    time.sleep(10)
+    def __upload_file(self, local_path: str, remote_path: str) -> None:
+        self.drive_app.upload_item(item_path=remote_path, file_path=local_path)
+        logging.info(f"Uploaded {local_path} to {remote_path}")
 
-    # Upload log files manually to get all logs
-    upload_file(drive, "process.log", onedrive_path)
-    upload_file(drive, "usage.log", onedrive_path)
-    upload_file(drive, "snaphu.log", onedrive_path)
-    upload_file(drive, "gpt.log", onedrive_path)
+    def upload_results(self, local_path: str, onedrive_path: str, flag) -> None:
+        logging.info("Uploading files ...")
+
+        # Get list of files
+        files = os.listdir(local_path)
+        args = [
+            (self.drive_app, os.path.join(local_path, file), onedrive_path)
+            for file in files
+        ]
+
+        # Upload files
+        pool = multiprocessing.Pool()
+        pool.starmap(self.__upload_file, args)
+        pool.close()
+
+        logging.info("All files uploaded")
+
+        with flag.get_lock():
+            flag.value = True
+        time.sleep(10)
+
+        # Upload log files manually to get all logs
+        self.__upload_file(self.drive_app, "process.log", onedrive_path)
+        self.__upload_file(self.drive_app, "usage.log", onedrive_path)
+        self.__upload_file(self.drive_app, "snaphu.log", onedrive_path)
+        self.__upload_file(self.drive_app, "gpt.log", onedrive_path)
 
 
 def main_process(args, flag):
     logging.info(f"Processing data {args.input_file1} and {args.input_file2}")
 
-    update_xml(args.input_file1, args.input_file2)
-    download_products(args.user, args.passwd, args.input_file1, args.input_file2)
-    process()
-    upload_results(args.token, temp_dir + "/output", "ESAProcess/", flag)
+    copernicus = Copernicus(args.user, args.passwd)
+    process = Process(args.input_file1, args.input_file2)
+    drive = MSOnedrive(args.tenant, args.client)
+
+    copernicus.download_products(args.input_file1, args.input_file2)
+    process.process()
+    drive.upload_results(temp_dir + "/output", "ESAProcess/", flag)
 
 
 def main_sentry(args, flag):
@@ -298,8 +327,11 @@ if __name__ == "__main__":
     if args.passwd is None:
         logging.error("Provide a password for Copernicus Hub with --passwd")
         sys.exit(-1)
-    if args.token is None:
-        logging.error("Provide a token for Microsoft Onedrive with --token")
+    if args.tenant is None:
+        logging.error("Provide a tenant ID for Microsoft Onedrive with --tenant")
+        sys.exit(-1)
+    if args.client is None:
+        logging.error("Provide a client ID for Microsoft Onedrive with --client")
         sys.exit(-1)
     if args.work_dir is None:
         logging.warn("Using current directory as working directory")
