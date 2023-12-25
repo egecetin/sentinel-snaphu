@@ -13,6 +13,7 @@ import xml.etree.ElementTree
 
 import pysftp
 
+
 def parse_args() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--input-file1", "-i1", type=str, help="Input file 1")
@@ -28,6 +29,8 @@ def parse_args() -> None:
     parser.add_argument(
         "--work-dir", "-w", type=str, help="Working directory to use as a temp storage"
     )
+    parser.add_argument("--droplet-id", "-di", type=str, help="DigitalOcean droplet ID")
+    parser.add_argument("--droplet-token", "-dt", type=str, help="DigitalOcean Personal Access Token (PAT)")
 
     return parser.parse_args()
 
@@ -208,6 +211,7 @@ class Process:
 
         logging.info("Process complete!")
 
+
 class SFTP:
     def __init__(self, host: str, username: str) -> None:
         logging.info("Creating SFTP connection ...")
@@ -242,7 +246,7 @@ def main_process(args, flag):
 
     copernicus.download_products(args.input_file1, args.input_file2)
     process.process()
-    drive.upload_results(temp_dir + "/output", "/home/ESAProcess/", flag)
+    storage.upload_results(temp_dir + "/output", "/home/ESAProcess/", flag)
 
 
 def main_sentry(args, flag):
@@ -302,6 +306,13 @@ if __name__ == "__main__":
     if args.remote_user is None:
         logging.error("Provide a remote user of SFTP server with --remote-user")
         sys.exit(-1)
+    if args.droplet_id is None:
+        logging.error("Provide a droplet ID with --droplet-id")
+        sys.exit(-1)
+    if args.droplet_token is None:
+        logging.error("Provide a droplet token with --droplet-token")
+        sys.exit(-1)
+    
     if args.work_dir is None:
         logging.warn("Using current directory as working directory")
         temp_dir = os.getcwd()
@@ -332,3 +343,16 @@ if __name__ == "__main__":
             logging.error(f"{traceback}")
         sentry.kill()
         processor.kill()
+
+    # Send destroy command to droplet
+    headers = {"Authorization": f"Bearer {args.token}"}
+    response = requests.delete(
+        "https://api.digitalocean.com/v2/droplets/"
+        + args.droplet_id
+        + "?include_resources=true",
+        headers=headers,
+        timeout=30,
+    )
+
+    logging.info(f"Received response from DigitalOcean: {response.text}")
+    logging.info("Goodbye!")
