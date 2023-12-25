@@ -11,9 +11,7 @@ import time
 import traceback
 import xml.etree.ElementTree
 
-import msal
-from msdrive import OneDrive
-
+import pysftp
 
 def parse_args() -> None:
     parser = argparse.ArgumentParser()
@@ -25,8 +23,8 @@ def parse_args() -> None:
     parser.add_argument(
         "--passwd", "-p", type=str, help="Copernicus Open Access Hub password"
     )
-    parser.add_argument("--tenant", "-t", type=str, help="Microsoft Onedrive tenant ID")
-    parser.add_argument("--client", "-c", type=str, help="Microsoft Onedrive client ID")
+    parser.add_argument("--remote-ip", "-ri", type=str, help="Remote server IP address")
+    parser.add_argument("--remote-user", "-ru", type=str, help="Remote server username")
     parser.add_argument(
         "--work-dir", "-w", type=str, help="Working directory to use as a temp storage"
     )
@@ -210,47 +208,15 @@ class Process:
 
         logging.info("Process complete!")
 
+class SFTP:
+    def __init__(self, host: str, username: str) -> None:
+        logging.info("Creating SFTP connection ...")
+        self.sftp = pysftp.Connection(host, username)
+        logging.info("SFTP connection established!")
 
-class MSOnedrive:
-    def __init__(self, tenant: str, client: str) -> None:
-        logging.info("Getting token from Onedrive ...")
-        token = self.__get_access_token(tenant, client)
-        logging.info("Token get!")
-
-        self.drive_app = OneDrive(token)
-
-    def __get_access_token(tenant: str, client: str) -> str:
-        app = msal.PublicClientApplication(
-            authority=("https://login.microsoftonline.com/" + tenant), client_id=client
-        )
-
-        flow = app.initiate_device_flow(scopes=["Files.Read.All"])
-        result = app.acquire_token_by_device_flow(flow)
-
-        if "access_token" in result:
-            return result["access_token"]
-        else:
-            raise Exception(result["error"])
-
-    def __upload_file(self, local_path: str, remote_path: str) -> None:
-        self.drive_app.upload_item(item_path=remote_path, file_path=local_path)
-        logging.info(f"Uploaded {local_path} to {remote_path}")
-
-    def upload_results(self, local_path: str, onedrive_path: str, flag) -> None:
+    def upload_results(self, local_path: str, remote_path: str, flag) -> None:
         logging.info("Uploading files ...")
-
-        # Get list of files
-        files = os.listdir(local_path)
-        args = [
-            (self.drive_app, os.path.join(local_path, file), onedrive_path)
-            for file in files
-        ]
-
-        # Upload files
-        pool = multiprocessing.Pool()
-        pool.starmap(self.__upload_file, args)
-        pool.close()
-
+        self.sftp.put_r(local_path, remote_path)
         logging.info("All files uploaded")
 
         with flag.get_lock():
@@ -258,10 +224,13 @@ class MSOnedrive:
         time.sleep(10)
 
         # Upload log files manually to get all logs
-        self.__upload_file(self.drive_app, "process.log", onedrive_path)
-        self.__upload_file(self.drive_app, "usage.log", onedrive_path)
-        self.__upload_file(self.drive_app, "snaphu.log", onedrive_path)
-        self.__upload_file(self.drive_app, "gpt.log", onedrive_path)
+        self.sftp.put("process.log", remote_path)
+        self.sftp.put("usage.log", remote_path)
+        self.sftp.put("snaphu.log", remote_path)
+        self.sftp.put("gpt.log", remote_path)
+
+    def __del__(self) -> None:
+        self.sftp.close()
 
 
 def main_process(args, flag):
@@ -269,11 +238,11 @@ def main_process(args, flag):
 
     copernicus = Copernicus(args.user, args.passwd)
     process = Process(args.input_file1, args.input_file2)
-    drive = MSOnedrive(args.tenant, args.client)
+    storage = SFTP(args.remote_ip, args.remote_user)
 
     copernicus.download_products(args.input_file1, args.input_file2)
     process.process()
-    drive.upload_results(temp_dir + "/output", "ESAProcess/", flag)
+    drive.upload_results(temp_dir + "/output", "/home/ESAProcess/", flag)
 
 
 def main_sentry(args, flag):
@@ -327,11 +296,11 @@ if __name__ == "__main__":
     if args.passwd is None:
         logging.error("Provide a password for Copernicus Hub with --passwd")
         sys.exit(-1)
-    if args.tenant is None:
-        logging.error("Provide a tenant ID for Microsoft Onedrive with --tenant")
+    if args.remote_ip is None:
+        logging.error("Provide a remote IP address of SFTP server with --remote-ip")
         sys.exit(-1)
-    if args.client is None:
-        logging.error("Provide a client ID for Microsoft Onedrive with --client")
+    if args.remote_user is None:
+        logging.error("Provide a remote user of SFTP server with --remote-user")
         sys.exit(-1)
     if args.work_dir is None:
         logging.warn("Using current directory as working directory")
