@@ -26,9 +26,6 @@ def parse_args() -> None:
     )
     parser.add_argument("--remote-ip", "-ri", type=str, help="Remote server IP address")
     parser.add_argument("--remote-user", "-ru", type=str, help="Remote server username")
-    parser.add_argument(
-        "--work-dir", "-w", type=str, help="Working directory to use as a temp storage"
-    )
     parser.add_argument("--droplet-id", "-di", type=str, help="DigitalOcean droplet ID")
     parser.add_argument("--droplet-token", "-dt", type=str, help="DigitalOcean Personal Access Token (PAT)")
 
@@ -62,7 +59,7 @@ class Copernicus:
         self.token = self.__get_access_token(username, password)
         logging.info("Token get!")
 
-    def __get_access_token(username: str, password: str) -> str:
+    def __get_access_token(self, username: str, password: str) -> str:
         data = {
             "client_id": "cdse-public",
             "username": username,
@@ -81,24 +78,39 @@ class Copernicus:
             )
         return r.json()["access_token"]
 
-    def __get_file(self, data_id) -> None:
+    def _get_file(self, data_id: str, filename: str) -> None:
         url = f"https://zipper.dataspace.copernicus.eu/odata/v1/Products({data_id})/$value"
-        headers = {"Authorization": f"Bearer {self.access_token}"}
+        headers = {"Authorization": f"Bearer {self.token}"}
 
         session = requests.Session()
         session.headers.update(headers)
-        response = session.get(url, headers=headers, stream=True)
+        r = session.get(url, headers=headers, stream=True)
 
-        with open(data_id, "wb") as file:
-            for chunk in response.iter_content(chunk_size=8192):
+        with open(filename, "wb") as file:
+            for chunk in r.iter_content(chunk_size=8192):
                 if chunk:
                     file.write(chunk)
 
-    def download_products(self, filename1: str, filename2: str) -> None:
+    def get_filename(self, data_id: str) -> str:
+        url = f"https://zipper.dataspace.copernicus.eu/odata/v1/Products({data_id})/Nodes"
+        headers = {"Authorization": f"Bearer {self.token}"}
+
+        session = requests.Session()
+        session.headers.update(headers)
+        try:
+            r = session.get(url, headers=headers, stream=True)
+            r.raise_for_status()
+        except Exception as e:
+            raise Exception(
+                f"Name query failed: {r.json()}"
+            )
+        return r.json()["result"][0]["Name"]
+
+    def download_products(self, data_id1: str, filename1: str, data_id2: str, filename2: str) -> None:
         logging.info("Starting to download files ...")
-        args = [[filename1, self.token], [filename2, self.token]]
+        args = [[data_id1, filename1], [data_id2, filename2]]
         pool = multiprocessing.Pool()
-        pool.starmap(self.__get_file, args)
+        pool.starmap(self._get_file, args)
         pool.close()
         logging.info("Files downloaded!")
 
@@ -109,7 +121,7 @@ class Process:
         self.__update_xml(filename1, filename2)
         logging.info("XMLs updated!")
 
-    def __update_xml(filename1: str, filename2: str) -> None:
+    def __update_xml(self, filename1: str, filename2: str) -> None:
         # Parse and update the pre-process XML file
         tree = xml.etree.ElementTree.parse("TOPSAR_PreSnaphuExportIWAllSwaths.xml")
         root = tree.getroot()
@@ -118,19 +130,18 @@ class Process:
             if elem.get("id") in ["Read", "Read(2)", "Write", "SnaphuExport"]:
                 params = elem.find("parameters")
                 if elem.get("id") == "Read":
-                    params.find("file").text = temp_dir + "/" + filename1
+                    params.find("file").text = filename1
                 elif elem.get("id") == "Read(2)":
-                    params.find("file").text = temp_dir + "/" + filename2
+                    params.find("file").text = filename2
                 elif elem.get("id") == "Write":
-                    targetFolder = temp_dir + "/output/"
+                    targetFolder = "output/"
                     os.makedirs(targetFolder, exist_ok=True)
                     params.find("file").text = (
-                        temp_dir
-                        + "/output/"
+                        "output/"
                         + "Orb_Stack_Ifg_Deb_DInSAR_mrg_ML_Flt.dim"
                     )
                 elif elem.get("id") == "SnaphuExport":
-                    targetFolder = temp_dir + "/" + "snaphu_export/"
+                    targetFolder = "snaphu_export/"
                     os.makedirs(targetFolder, exist_ok=True)
                     params = elem.find("parameters")
                     params.find("targetFolder").text = targetFolder
@@ -151,12 +162,11 @@ class Process:
                 params = elem.find("parameters")
                 if elem.get("id") == "Read":
                     params.find("file").text = (
-                        temp_dir
-                        + "/output/"
+                        "output/"
                         + "Orb_Stack_Ifg_Deb_DInSAR_mrg_ML_Flt.dim"
                     )
                 elif elem.get("id") == "SnaphuExport":
-                    targetFolder = temp_dir + "/" + "snaphu_export/"
+                    targetFolder = "snaphu_export/"
                     os.makedirs(targetFolder, exist_ok=True)
                     params = elem.find("parameters")
                     params.find("targetFolder").text = targetFolder
@@ -167,7 +177,7 @@ class Process:
 
         tree.write("snaphuexport.xml")
 
-    def process() -> None:
+    def process(self) -> None:
         logging.info("Starting to process ...")
 
         # Pre-process
@@ -194,7 +204,7 @@ class Process:
         logging.info("Snaphu exported! Starting to unwrap ...")
 
         # Read snaphu command from config
-        file_snaphu = open(temp_dir + "/" + "snaphu_export/snaphu.conf", "r")
+        file_snaphu = open("snaphu_export/snaphu.conf", "r")
         lines = file_snaphu.readlines()
 
         log_file = open("snaphu.log", "w")
@@ -241,12 +251,14 @@ def main_process(args, flag):
     logging.info(f"Processing data {args.input_file1} and {args.input_file2}")
 
     copernicus = Copernicus(args.user, args.passwd)
-    process = Process(args.input_file1, args.input_file2)
+    filename1 = copernicus.get_filename(args.input_file1) + ".zip"
+    filename2 = copernicus.get_filename(args.input_file2) + ".zip"
+    process = Process(filename1, filename2)
     storage = SFTP(args.remote_ip, args.remote_user)
 
-    copernicus.download_products(args.input_file1, args.input_file2)
+    copernicus.download_products(args.input_file1, filename1, args.input_file2, filename2)
     process.process()
-    storage.upload_results(temp_dir + "/output", "/home/ESAProcess/", flag)
+    storage.upload_results("output", "/home/ESAProcess/", flag)
 
 
 def main_sentry(args, flag):
@@ -312,10 +324,6 @@ if __name__ == "__main__":
     if args.droplet_token is None:
         logging.error("Provide a droplet token with --droplet-token")
         sys.exit(-1)
-    
-    if args.work_dir is None:
-        logging.warn("Using current directory as working directory")
-        temp_dir = os.getcwd()
 
     flag = multiprocessing.Value("b", False)
 

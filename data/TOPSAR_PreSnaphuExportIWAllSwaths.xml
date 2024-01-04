@@ -10,6 +10,7 @@
       <bandNames/>
       <pixelRegion>0,0,73462,15199</pixelRegion>
       <maskNames/>
+      <formatName>SENTINEL-1</formatName>
     </parameters>
   </node>
   <node id="Read(2)">
@@ -22,6 +23,7 @@
       <bandNames/>
       <pixelRegion>0,0,73463,15199</pixelRegion>
       <maskNames/>
+      <formatName>SENTINEL-1</formatName>
     </parameters>
   </node>
   <node id="TOPSAR-Split">

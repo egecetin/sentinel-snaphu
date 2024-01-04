@@ -24,8 +24,8 @@ plt.savefig("usage.png")
 plt.clf()
 
 # plot the network data as a line graph
-plt.plot(durations, data[:, 4] * 8 / 1000 / 1000, label="Upload")
-plt.plot(durations, data[:, 5] * 8 / 1000 / 1000, label="Download")
+plt.plot(durations, data[:, 4] * 8 / 1000 / 1000 / 5, label="Upload")
+plt.plot(durations, data[:, 5] * 8 / 1000 / 1000 / 5, label="Download")
 
 plt.xlabel("Time (seconds)")
 plt.ylabel("Usage (Mbps)")
