@@ -24,15 +24,15 @@ def parse_args() -> None:
     parser.add_argument(
         "--passwd", "-p", type=str, help="Copernicus Open Access Hub password"
     )
-    parser.add_argument("--remote-ip", "-ri", type=str, help="Remote server IP address")
-    parser.add_argument("--remote-user", "-ru", type=str, help="Remote server username")
-    parser.add_argument("--droplet-id", "-di", type=str, help="DigitalOcean droplet ID")
-    parser.add_argument(
-        "--droplet-token",
-        "-dt",
-        type=str,
-        help="DigitalOcean Personal Access Token (PAT)",
-    )
+    # parser.add_argument("--remote-ip", "-ri", type=str, help="Remote server IP address")
+    # parser.add_argument("--remote-user", "-ru", type=str, help="Remote server username")
+    # parser.add_argument("--droplet-id", "-di", type=str, help="DigitalOcean droplet ID")
+    # parser.add_argument(
+    #     "--droplet-token",
+    #     "-dt",
+    #     type=str,
+    #     help="DigitalOcean Personal Access Token (PAT)",
+    # )
 
     return parser.parse_args()
 
@@ -269,13 +269,13 @@ def main_process(args, flag):
     filename1 = copernicus.get_filename(args.input_file1) + ".zip"
     filename2 = copernicus.get_filename(args.input_file2) + ".zip"
     process = Process(filename1, filename2)
-    storage = SFTP(args.remote_ip, args.remote_user)
+    # storage = SFTP(args.remote_ip, args.remote_user)
 
     copernicus.download_products(
         args.input_file1, filename1, args.input_file2, filename2
     )
     process.process()
-    storage.upload_results("output", "/home/ESAProcess/", flag)
+    # storage.upload_results("output", "/home/ESAProcess/", flag)
 
 
 def main_sentry(args, flag):
@@ -329,18 +329,18 @@ if __name__ == "__main__":
     if args.passwd is None:
         logging.error("Provide a password for Copernicus Hub with --passwd")
         sys.exit(-1)
-    if args.remote_ip is None:
-        logging.error("Provide a remote IP address of SFTP server with --remote-ip")
-        sys.exit(-1)
-    if args.remote_user is None:
-        logging.error("Provide a remote user of SFTP server with --remote-user")
-        sys.exit(-1)
-    if args.droplet_id is None:
-        logging.error("Provide a droplet ID with --droplet-id")
-        sys.exit(-1)
-    if args.droplet_token is None:
-        logging.error("Provide a droplet token with --droplet-token")
-        sys.exit(-1)
+    # if args.remote_ip is None:
+    #     logging.error("Provide a remote IP address of SFTP server with --remote-ip")
+    #     sys.exit(-1)
+    # if args.remote_user is None:
+    #     logging.error("Provide a remote user of SFTP server with --remote-user")
+    #     sys.exit(-1)
+    # if args.droplet_id is None:
+    #     logging.error("Provide a droplet ID with --droplet-id")
+    #     sys.exit(-1)
+    # if args.droplet_token is None:
+    #     logging.error("Provide a droplet token with --droplet-token")
+    #     sys.exit(-1)
 
     flag = multiprocessing.Value("b", False)
 
@@ -370,14 +370,14 @@ if __name__ == "__main__":
         processor.kill()
 
     # Send destroy command to droplet
-    headers = {"Authorization": f"Bearer {args.token}"}
-    response = requests.delete(
-        "https://api.digitalocean.com/v2/droplets/"
-        + args.droplet_id
-        + "?include_resources=true",
-        headers=headers,
-        timeout=30,
-    )
+    # headers = {"Authorization": f"Bearer {args.token}"}
+    # response = requests.delete(
+    #     "https://api.digitalocean.com/v2/droplets/"
+    #     + args.droplet_id
+    #     + "?include_resources=true",
+    #     headers=headers,
+    #     timeout=30,
+    # )
 
-    logging.info(f"Received response from DigitalOcean: {response.text}")
+    # logging.info(f"Received response from DigitalOcean: {response.text}")
     logging.info("Goodbye!")
