@@ -27,7 +27,12 @@ def parse_args() -> None:
     parser.add_argument("--remote-ip", "-ri", type=str, help="Remote server IP address")
     parser.add_argument("--remote-user", "-ru", type=str, help="Remote server username")
     parser.add_argument("--droplet-id", "-di", type=str, help="DigitalOcean droplet ID")
-    parser.add_argument("--droplet-token", "-dt", type=str, help="DigitalOcean Personal Access Token (PAT)")
+    parser.add_argument(
+        "--droplet-token",
+        "-dt",
+        type=str,
+        help="DigitalOcean Personal Access Token (PAT)",
+    )
 
     return parser.parse_args()
 
@@ -86,13 +91,24 @@ class Copernicus:
         session.headers.update(headers)
         r = session.get(url, headers=headers, stream=True)
 
-        with open(filename, "wb") as file:
+        with open(f"data/{filename}", "wb") as file:
             for chunk in r.iter_content(chunk_size=8192):
                 if chunk:
                     file.write(chunk)
+        logging.info(f"{filename} downloaded")
+
+        # For fix https://forum.step.esa.int/t/iw3-missing-when-downloading-product-from-data-space/40035
+        logging.info(f"Extracting {filename}")
+        self.__unzip_file(f"data/{filename}", f"data/")
+        logging.info(f"Extracted {filename}")
+
+    def __unzip_file(self, filename: str, path: str) -> None:
+        shutil.unpack_archive(filename, path, "zip")
 
     def get_filename(self, data_id: str) -> str:
-        url = f"https://zipper.dataspace.copernicus.eu/odata/v1/Products({data_id})/Nodes"
+        url = (
+            f"https://zipper.dataspace.copernicus.eu/odata/v1/Products({data_id})/Nodes"
+        )
         headers = {"Authorization": f"Bearer {self.token}"}
 
         session = requests.Session()
@@ -101,12 +117,12 @@ class Copernicus:
             r = session.get(url, headers=headers, stream=True)
             r.raise_for_status()
         except Exception as e:
-            raise Exception(
-                f"Name query failed: {r.json()}"
-            )
+            raise Exception(f"Name query failed: {r.json()}")
         return r.json()["result"][0]["Name"]
 
-    def download_products(self, data_id1: str, filename1: str, data_id2: str, filename2: str) -> None:
+    def download_products(
+        self, data_id1: str, filename1: str, data_id2: str, filename2: str
+    ) -> None:
         logging.info("Starting to download files ...")
         args = [[data_id1, filename1], [data_id2, filename2]]
         pool = multiprocessing.Pool()
@@ -122,35 +138,35 @@ class Process:
         logging.info("XMLs updated!")
 
     def __update_xml(self, filename1: str, filename2: str) -> None:
+        os.makedirs("data/", exist_ok=True)
+
         # Parse and update the pre-process XML file
         tree = xml.etree.ElementTree.parse("TOPSAR_PreSnaphuExportIWAllSwaths.xml")
         root = tree.getroot()
 
         for elem in root.findall("node"):
-            if elem.get("id") in ["Read", "Read(2)", "Write", "SnaphuExport"]:
+            if elem.get("id") in ["Read", "Read(2)", "Write"]:
                 params = elem.find("parameters")
                 if elem.get("id") == "Read":
-                    params.find("file").text = filename1
+                    params.find("file").text = (
+                        "data/" + filename1[:-4] + "/manifest.safe"
+                    )
                 elif elem.get("id") == "Read(2)":
-                    params.find("file").text = filename2
+                    params.find("file").text = (
+                        "data/" + filename2[:-4] + "/manifest.safe"
+                    )
                 elif elem.get("id") == "Write":
                     targetFolder = "output/"
                     os.makedirs(targetFolder, exist_ok=True)
                     params.find("file").text = (
-                        "output/"
-                        + "Orb_Stack_Ifg_Deb_DInSAR_mrg_ML_Flt.dim"
+                        "output/" + "Orb_Stack_Ifg_Deb_DInSAR_mrg_ML_Flt.dim"
                     )
-                elif elem.get("id") == "SnaphuExport":
-                    targetFolder = "snaphu_export/"
-                    os.makedirs(targetFolder, exist_ok=True)
-                    params = elem.find("parameters")
-                    params.find("targetFolder").text = targetFolder
                 else:
                     raise Exception(
                         "This shouldn't happen! elem id none of the Read, Read(2), Write or SnaphuExport"
                     )
 
-        tree.write("presnaphuexport.xml")
+        tree.write("data/presnaphuexport.xml")
 
         # Parse the snaphu XML file
         # It should be separate file Ref: https://forum.step.esa.int/t/snaphu-export-does-not-generate-a-corrfile/27663/36
@@ -162,11 +178,10 @@ class Process:
                 params = elem.find("parameters")
                 if elem.get("id") == "Read":
                     params.find("file").text = (
-                        "output/"
-                        + "Orb_Stack_Ifg_Deb_DInSAR_mrg_ML_Flt.dim"
+                        "output/" + "Orb_Stack_Ifg_Deb_DInSAR_mrg_ML_Flt.dim"
                     )
                 elif elem.get("id") == "SnaphuExport":
-                    targetFolder = "snaphu_export/"
+                    targetFolder = "output/snaphu_export/"
                     os.makedirs(targetFolder, exist_ok=True)
                     params = elem.find("parameters")
                     params.find("targetFolder").text = targetFolder
@@ -175,7 +190,7 @@ class Process:
                         "This shouldn't happen! elem id neither Read nor SnaphuExport"
                     )
 
-        tree.write("snaphuexport.xml")
+        tree.write("data/snaphuexport.xml")
 
     def process(self) -> None:
         logging.info("Starting to process ...")
@@ -183,7 +198,7 @@ class Process:
         # Pre-process
         log_file = open("gpt.log", "w")
         result = subprocess.run(
-            ["/usr/local/snap/bin/gpt", "presnaphuexport.xml"], stdout=log_file
+            ["/usr/local/snap/bin/gpt", "data/presnaphuexport.xml"], stdout=log_file
         )
         log_file.flush()
 
@@ -194,7 +209,7 @@ class Process:
 
         # Export snaphu
         result = subprocess.run(
-            ["/usr/local/snap/bin/gpt", "snaphuexport.xml"], stdout=log_file
+            ["/usr/local/snap/bin/gpt", "data/snaphuexport.xml"], stdout=log_file
         )
         log_file.close()
 
@@ -204,7 +219,7 @@ class Process:
         logging.info("Snaphu exported! Starting to unwrap ...")
 
         # Read snaphu command from config
-        file_snaphu = open("snaphu_export/snaphu.conf", "r")
+        file_snaphu = open("output/snaphu_export/snaphu.conf", "r")
         lines = file_snaphu.readlines()
 
         log_file = open("snaphu.log", "w")
@@ -256,7 +271,9 @@ def main_process(args, flag):
     process = Process(filename1, filename2)
     storage = SFTP(args.remote_ip, args.remote_user)
 
-    copernicus.download_products(args.input_file1, filename1, args.input_file2, filename2)
+    copernicus.download_products(
+        args.input_file1, filename1, args.input_file2, filename2
+    )
     process.process()
     storage.upload_results("output", "/home/ESAProcess/", flag)
 

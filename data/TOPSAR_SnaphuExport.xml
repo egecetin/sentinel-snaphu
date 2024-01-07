@@ -23,7 +23,7 @@
       <initMethod>MST</initMethod>
       <numberOfTileRows>10</numberOfTileRows>
       <numberOfTileCols>10</numberOfTileCols>
-      <numberOfProcessors>8</numberOfProcessors>
+      <numberOfProcessors>64</numberOfProcessors>
       <rowOverlap>200</rowOverlap>
       <colOverlap>200</colOverlap>
       <tileCostThreshold>500</tileCostThreshold>

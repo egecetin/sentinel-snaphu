@@ -8,9 +8,8 @@
       <file>file1</file>
       <copyMetadata>true</copyMetadata>
       <bandNames/>
-      <pixelRegion>0,0,73462,15199</pixelRegion>
+      <pixelRegion>0,0,2147483647,2147483647</pixelRegion>
       <maskNames/>
-      <formatName>SENTINEL-1</formatName>
     </parameters>
   </node>
   <node id="Read(2)">
@@ -21,9 +20,8 @@
       <file>file2</file>
       <copyMetadata>true</copyMetadata>
       <bandNames/>
-      <pixelRegion>0,0,73463,15199</pixelRegion>
+      <pixelRegion>0,0,2147483647,2147483647</pixelRegion>
       <maskNames/>
-      <formatName>SENTINEL-1</formatName>
     </parameters>
   </node>
   <node id="TOPSAR-Split">
@@ -34,8 +32,6 @@
     <parameters class="com.bc.ceres.binding.dom.XppDomElement">
       <subswath>IW1</subswath>
       <selectedPolarisations>VV</selectedPolarisations>
-      <firstBurstIndex>1</firstBurstIndex>
-      <lastBurstIndex>9</lastBurstIndex>
       <wktAoi/>
     </parameters>
   </node>
@@ -47,8 +43,6 @@
     <parameters class="com.bc.ceres.binding.dom.XppDomElement">
       <subswath>IW1</subswath>
       <selectedPolarisations>VV</selectedPolarisations>
-      <firstBurstIndex>1</firstBurstIndex>
-      <lastBurstIndex>9</lastBurstIndex>
       <wktAoi/>
     </parameters>
   </node>
@@ -103,7 +97,7 @@
       <srpNumberPoints>501</srpNumberPoints>
       <orbitDegree>3</orbitDegree>
       <includeCoherence>true</includeCoherence>
-      <cohWinAz>3</cohWinAz>
+      <cohWinAz>2</cohWinAz>
       <cohWinRg>10</cohWinRg>
       <squarePixel>true</squarePixel>
       <subtractTopographicPhase>false</subtractTopographicPhase>
@@ -124,8 +118,6 @@
     <parameters class="com.bc.ceres.binding.dom.XppDomElement">
       <subswath>IW2</subswath>
       <selectedPolarisations>VV</selectedPolarisations>
-      <firstBurstIndex>1</firstBurstIndex>
-      <lastBurstIndex>9</lastBurstIndex>
       <wktAoi/>
     </parameters>
   </node>
@@ -137,8 +129,6 @@
     <parameters class="com.bc.ceres.binding.dom.XppDomElement">
       <subswath>IW2</subswath>
       <selectedPolarisations>VV</selectedPolarisations>
-      <firstBurstIndex>1</firstBurstIndex>
-      <lastBurstIndex>9</lastBurstIndex>
       <wktAoi/>
     </parameters>
   </node>
@@ -171,7 +161,7 @@
       <srpNumberPoints>501</srpNumberPoints>
       <orbitDegree>3</orbitDegree>
       <includeCoherence>true</includeCoherence>
-      <cohWinAz>3</cohWinAz>
+      <cohWinAz>2</cohWinAz>
       <cohWinRg>10</cohWinRg>
       <squarePixel>true</squarePixel>
       <subtractTopographicPhase>false</subtractTopographicPhase>
@@ -192,8 +182,6 @@
     <parameters class="com.bc.ceres.binding.dom.XppDomElement">
       <subswath>IW3</subswath>
       <selectedPolarisations>VV</selectedPolarisations>
-      <firstBurstIndex>1</firstBurstIndex>
-      <lastBurstIndex>10</lastBurstIndex>
       <wktAoi/>
     </parameters>
   </node>
@@ -205,8 +193,6 @@
     <parameters class="com.bc.ceres.binding.dom.XppDomElement">
       <subswath>IW3</subswath>
       <selectedPolarisations>VV</selectedPolarisations>
-      <firstBurstIndex>1</firstBurstIndex>
-      <lastBurstIndex>10</lastBurstIndex>
       <wktAoi/>
     </parameters>
   </node>
@@ -282,9 +268,9 @@
   <node id="TOPSAR-Merge">
     <operator>TOPSAR-Merge</operator>
     <sources>
-      <sourceProduct refid="TopoPhaseRemoval"/>
-      <sourceProduct.1 refid="TopoPhaseRemoval(2)"/>
-      <sourceProduct.2 refid="TopoPhaseRemoval(3)"/>
+      <sourceProduct refid="TOPSAR-Deburst"/>
+      <sourceProduct.1 refid="TOPSAR-Deburst(2)"/>
+      <sourceProduct.2 refid="TOPSAR-Deburst(3)"/>
     </sources>
     <parameters class="com.bc.ceres.binding.dom.XppDomElement">
       <selectedPolarisations/>
@@ -306,7 +292,7 @@
   <node id="Multilook">
     <operator>Multilook</operator>
     <sources>
-      <sourceProduct refid="TOPSAR-Merge"/>
+      <sourceProduct refid="TopoPhaseRemoval"/>
     </sources>
     <parameters class="com.bc.ceres.binding.dom.XppDomElement">
       <sourceBands/>
@@ -319,39 +305,7 @@
   <node id="TopoPhaseRemoval">
     <operator>TopoPhaseRemoval</operator>
     <sources>
-      <sourceProduct refid="TOPSAR-Deburst"/>
-    </sources>
-    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
-      <orbitDegree>3</orbitDegree>
-      <demName>SRTM 3Sec</demName>
-      <externalDEMFile/>
-      <externalDEMNoDataValue>0.0</externalDEMNoDataValue>
-      <tileExtensionPercent>100</tileExtensionPercent>
-      <outputTopoPhaseBand>false</outputTopoPhaseBand>
-      <outputElevationBand>false</outputElevationBand>
-      <outputLatLonBands>false</outputLatLonBands>
-    </parameters>
-  </node>
-  <node id="TopoPhaseRemoval(2)">
-    <operator>TopoPhaseRemoval</operator>
-    <sources>
-      <sourceProduct refid="TOPSAR-Deburst(2)"/>
-    </sources>
-    <parameters class="com.bc.ceres.binding.dom.XppDomElement">
-      <orbitDegree>3</orbitDegree>
-      <demName>SRTM 3Sec</demName>
-      <externalDEMFile/>
-      <externalDEMNoDataValue>0.0</externalDEMNoDataValue>
-      <tileExtensionPercent>100</tileExtensionPercent>
-      <outputTopoPhaseBand>false</outputTopoPhaseBand>
-      <outputElevationBand>false</outputElevationBand>
-      <outputLatLonBands>false</outputLatLonBands>
-    </parameters>
-  </node>
-  <node id="TopoPhaseRemoval(3)">
-    <operator>TopoPhaseRemoval</operator>
-    <sources>
-      <sourceProduct refid="TOPSAR-Deburst(3)"/>
+      <sourceProduct refid="TOPSAR-Merge"/>
     </sources>
     <parameters class="com.bc.ceres.binding.dom.XppDomElement">
       <orbitDegree>3</orbitDegree>
@@ -434,7 +388,7 @@
       <displayPosition x="511.0" y="252.0"/>
     </node>
     <node id="TOPSAR-Merge">
-      <displayPosition x="813.0" y="136.0"/>
+      <displayPosition x="696.0" y="135.0"/>
     </node>
     <node id="GoldsteinPhaseFiltering">
       <displayPosition x="1013.0" y="135.0"/>
@@ -443,13 +397,7 @@
       <displayPosition x="933.0" y="136.0"/>
     </node>
     <node id="TopoPhaseRemoval">
-      <displayPosition x="629.0" y="11.0"/>
-    </node>
-    <node id="TopoPhaseRemoval(2)">
-      <displayPosition x="645.0" y="135.0"/>
-    </node>
-    <node id="TopoPhaseRemoval(3)">
-      <displayPosition x="637.0" y="252.0"/>
+      <displayPosition x="803.0" y="135.0"/>
     </node>
     <node id="Write">
       <displayPosition x="1171.0" y="135.0"/>
