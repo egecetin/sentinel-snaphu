@@ -200,7 +200,7 @@ class Process:
         result = subprocess.run(
             ["/usr/local/snap/bin/gpt", "data/presnaphuexport.xml"],
             stdout=log_file,
-            stderr=subprocess.STDOUT,
+            stderr=log_file,
         )
         log_file.flush()
 
@@ -213,7 +213,7 @@ class Process:
         result = subprocess.run(
             ["/usr/local/snap/bin/gpt", "data/snaphuexport.xml"],
             stdout=log_file,
-            stderr=subprocess.STDOUT,
+            stderr=log_file,
         )
         log_file.close()
 
@@ -228,7 +228,7 @@ class Process:
 
         log_file = open("snaphu.log", "w")
         result = subprocess.run(
-            lines[6].replace("#", "").strip(), stdout=log_file, stderr=subprocess.STDOUT
+            lines[6].replace("#", "").strip(), stdout=log_file, stderr=log_file
         )
         log_file.close()
 
