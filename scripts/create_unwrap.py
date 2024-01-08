@@ -9,9 +9,9 @@ import subprocess
 import sys
 import time
 import traceback
-import xml.etree.ElementTree
 
 import pysftp
+import pyjavaproperties
 
 
 def parse_args() -> None:
@@ -33,6 +33,12 @@ def parse_args() -> None:
     #     type=str,
     #     help="DigitalOcean Personal Access Token (PAT)",
     # )
+    parser.add_argument(
+        "--subswath", "-s", type=str, default="IW1", help="Subswath to process"
+    )
+    parser.add_argument(
+        "--nProc", "-n", type=int, default=32, help="Number of processors to use"
+    )
 
     return parser.parse_args()
 
@@ -132,65 +138,28 @@ class Copernicus:
 
 
 class Process:
-    def __init__(self, filename1: str, filename2: str) -> None:
+    def __init__(self, filename1: str, filename2: str, args) -> None:
         logging.info("Preparing processing parameters ...")
-        self.__update_xml(filename1, filename2)
+        self.__prepare(filename1, filename2, args)
         logging.info("XMLs updated!")
 
-    def __update_xml(self, filename1: str, filename2: str) -> None:
+    def __prepare(self, filename1: str, filename2: str, args) -> None:
         os.makedirs("data/", exist_ok=True)
+        os.makedirs("output/snaphu_export", exist_ok=True)
 
-        # Parse and update the pre-process XML file
-        tree = xml.etree.ElementTree.parse("TOPSAR_PreSnaphuExportIWAllSwaths.xml")
-        root = tree.getroot()
+        # Update properties file
+        prop = pyjavaproperties.Properties()
+        prop.load(open("process.properties"))
 
-        for elem in root.findall("node"):
-            if elem.get("id") in ["Read", "Read(2)", "Write"]:
-                params = elem.find("parameters")
-                if elem.get("id") == "Read":
-                    params.find("file").text = (
-                        "data/" + filename1[:-4] + "/manifest.safe"
-                    )
-                elif elem.get("id") == "Read(2)":
-                    params.find("file").text = (
-                        "data/" + filename2[:-4] + "/manifest.safe"
-                    )
-                elif elem.get("id") == "Write":
-                    targetFolder = "output/"
-                    os.makedirs(targetFolder, exist_ok=True)
-                    params.find("file").text = (
-                        "output/" + "Orb_Stack_Ifg_Deb_DInSAR_mrg_ML_Flt.dim"
-                    )
-                else:
-                    raise Exception(
-                        "This shouldn't happen! elem id none of the Read, Read(2), Write or SnaphuExport"
-                    )
+        prop["input_file_1"] = "data/" + filename1[:-4] + "/manifest.safe"
+        prop["input_file_2"] = "data/" + filename2[:-4] + "/manifest.safe"
+        prop["output_file"] = (
+            "output/" + args.subswath + "Orb_Stack_Ifg_Deb_DInSAR_mrg_ML_Flt.dim"
+        )
+        prop["subswath"] = args.subswath
+        prop["nProc"] = str(args.nProc)
 
-        tree.write("data/presnaphuexport.xml")
-
-        # Parse the snaphu XML file
-        # It should be separate file Ref: https://forum.step.esa.int/t/snaphu-export-does-not-generate-a-corrfile/27663/36
-        tree = xml.etree.ElementTree.parse("TOPSAR_SnaphuExport.xml")
-        root = tree.getroot()
-
-        for elem in root.findall("node"):
-            if elem.get("id") in ["Read", "SnaphuExport"]:
-                params = elem.find("parameters")
-                if elem.get("id") == "Read":
-                    params.find("file").text = (
-                        "output/" + "Orb_Stack_Ifg_Deb_DInSAR_mrg_ML_Flt.dim"
-                    )
-                elif elem.get("id") == "SnaphuExport":
-                    targetFolder = "output/snaphu_export/"
-                    os.makedirs(targetFolder, exist_ok=True)
-                    params = elem.find("parameters")
-                    params.find("targetFolder").text = targetFolder
-                else:
-                    raise Exception(
-                        "This shouldn't happen! elem id neither Read nor SnaphuExport"
-                    )
-
-        tree.write("data/snaphuexport.xml")
+        prop.store(open("data/process.properties"))
 
     def process(self) -> None:
         logging.info("Starting to process ...")
@@ -198,7 +167,12 @@ class Process:
         # Pre-process
         log_file = open("gpt.log", "w")
         result = subprocess.run(
-            ["/usr/local/snap/bin/gpt", "data/presnaphuexport.xml"],
+            [
+                "/usr/local/snap/bin/gpt",
+                "data/presnaphuexport.xml",
+                "-p",
+                "data/process.properties",
+            ],
             stdout=log_file,
             stderr=log_file,
         )
@@ -211,7 +185,12 @@ class Process:
 
         # Export snaphu
         result = subprocess.run(
-            ["/usr/local/snap/bin/gpt", "data/snaphuexport.xml"],
+            [
+                "/usr/local/snap/bin/gpt",
+                "data/snaphuexport.xml",
+                "-p",
+                "data/process.properties",
+            ],
             stdout=log_file,
             stderr=log_file,
         )

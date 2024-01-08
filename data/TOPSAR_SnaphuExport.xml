@@ -5,7 +5,7 @@
     <sources/>
     <parameters class="com.bc.ceres.binding.dom.XppDomElement">
       <useAdvancedOptions>false</useAdvancedOptions>
-      <file>file1</file>
+      <file>${output_file}</file>
       <copyMetadata>true</copyMetadata>
       <bandNames/>
       <pixelRegion>0,0,5560,12232</pixelRegion>
@@ -18,12 +18,12 @@
       <sourceProduct refid="Read"/>
     </sources>
     <parameters class="com.bc.ceres.binding.dom.XppDomElement">
-      <targetFolder>folder1</targetFolder>
+      <targetFolder>${snaphu_folder}</targetFolder>
       <statCostMode>DEFO</statCostMode>
       <initMethod>MST</initMethod>
       <numberOfTileRows>10</numberOfTileRows>
       <numberOfTileCols>10</numberOfTileCols>
-      <numberOfProcessors>64</numberOfProcessors>
+      <numberOfProcessors>${nProc}</numberOfProcessors>
       <rowOverlap>200</rowOverlap>
       <colOverlap>200</colOverlap>
       <tileCostThreshold>500</tileCostThreshold>
