@@ -43,7 +43,7 @@
       <sourceProduct refid="Apply-Orbit-File(2)"/>
     </sources>
     <parameters class="com.bc.ceres.binding.dom.XppDomElement">
-      <subswath>IW1</subswath>
+      <subswath>${subswath}</subswath>
       <selectedPolarisations>VV</selectedPolarisations>
       <firstBurstIndex>1</firstBurstIndex>
       <lastBurstIndex>9999</lastBurstIndex>

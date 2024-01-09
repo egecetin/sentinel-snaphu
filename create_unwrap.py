@@ -94,9 +94,12 @@ class Copernicus:
             logging.info(f"{filename} downloaded")
 
         # For fix https://forum.step.esa.int/t/iw3-missing-when-downloading-product-from-data-space/40035
-        logging.info(f"Extracting {filename}")
-        self.__unzip_file(f"data/{filename}", f"data/")
-        logging.info(f"Extracted {filename}")
+        if (os.path.isdir(f"data/{filename[:-4]}"))
+            logging.info(f"{filename[:-4]} detected in directory skipping extracting")
+        else:
+            logging.info(f"Extracting {filename}")
+            self.__unzip_file(f"data/{filename}", f"data/")
+            logging.info(f"Extracted {filename}")
 
     def __unzip_file(self, filename: str, path: str) -> None:
         shutil.unpack_archive(filename, path, "zip")
@@ -129,26 +132,29 @@ class Copernicus:
 
 class Process:
     def __init__(self, filename1: str, filename2: str, subswath: str) -> None:
+        self.filename1 = filename1
+        self.filename2 = filename2
+        self.subswath = subswath
+        self.output_filename = self.filename1[:4] + self.subswath + self.filename1[6:33] + self.filename2[17:33] + "Orb_Stack_Ifg_Deb_DInSAR_mrg_ML_Flt.dim"
+
         logging.info("Preparing processing parameters ...")
-        self.__prepare(filename1, filename2, subswath)
+        self.__prepare()
         logging.info("Processing parameters updated!")
 
-    def __prepare(self, filename1: str, filename2: str, subswath: str) -> None:
+    def __prepare(self) -> None:
         # Update properties file for process
         prop = pyjavaproperties.Properties()
         prop.load(open("process.properties"))
 
-        prop["input_file_1"] = "data/" + filename1[:-4] + "/manifest.safe"
-        prop["input_file_2"] = "data/" + filename2[:-4] + "/manifest.safe"
-        prop["output_file"] = (
-            "output/" + filename1[:4] + subswath + filename1[6:33] + filename2[17:33] + "Orb_Stack_Ifg_Deb_DInSAR_mrg_ML_Flt.dim"
-        )
-        prop["subswath"] = subswath
+        prop["input_file_1"] = "data/" + self.filename1[:-4] + "/manifest.safe"
+        prop["input_file_2"] = "data/" + self.filename2[:-4] + "/manifest.safe"
+        prop["output_file"] = "output/" + self.output_filename
+        prop["subswath"] = self.subswath
 
         prop.store(open("data/process.properties", "w"))
 
     def process(self) -> None:
-        logging.info("Starting to process ...")
+        logging.info("Starting to process " + self.subswath + " ...")
 
         # Pre-process
         log_file = open("output/gpt.log", "w")
@@ -158,8 +164,11 @@ class Process:
                 "TOPSAR_PreSnaphuExportIW.xml",
                 "-p",
                 "data/process.properties",
-                "-J-Xmx" + str(int(psutil.virtual_memory().total / (1024**3) * 0.75)) + "G",
-                "-Dsnap.jai.tileCacheSize=" + str(int(psutil.virtual_memory().total / (1024**3) * 0.75 * 0.5))
+                "-J-Xmx"
+                + str(int(psutil.virtual_memory().total / (1024**3) * 0.75))
+                + "G",
+                "-Dsnap.jai.tileCacheSize="
+                + str(int(psutil.virtual_memory().total / (1024**3) * 0.75 * 0.5)),
             ],
             stdout=log_file,
             stderr=log_file,
@@ -178,8 +187,11 @@ class Process:
                 "TOPSAR_SnaphuExport.xml",
                 "-p",
                 "data/process.properties",
-                "-J-Xmx" + str(int(psutil.virtual_memory().total / (1024**3) * 0.75)) + "G",
-                "-Dsnap.jai.tileCacheSize=" + str(int(psutil.virtual_memory().total / (1024**3) * 0.75 * 0.5))
+                "-J-Xmx"
+                + str(int(psutil.virtual_memory().total / (1024**3) * 0.75))
+                + "G",
+                "-Dsnap.jai.tileCacheSize="
+                + str(int(psutil.virtual_memory().total / (1024**3) * 0.75 * 0.5)),
             ],
             stdout=log_file,
             stderr=log_file,
@@ -192,22 +204,16 @@ class Process:
         logging.info("Snaphu exported! Starting to unwrap ...")
 
         # Read snaphu command from config
-        file_snaphu = open("output/snaphu_export/snaphu.conf", "r")
+        file_snaphu = open("output/snaphu_export/" + self.output_filename[:-4] + "/snaphu.conf", "r")
         lines = file_snaphu.readlines()
 
         log_file = open("output/snaphu.log", "w")
-        result = subprocess.run(
-            lines[6].replace("#", "").strip(), stdout=log_file, stderr=log_file
-        )
+        result = subprocess.run(lines[6].replace("#", "").strip().split(), cwd=("output/snaphu_export/" + self.output_filename[:-4]), stdout=log_file, stderr=log_file)
         log_file.close()
 
         if result.returncode != 0:
             logging.error(f"Unwrap returned error code {result.returncode}")
             return
-
-        logging.info("Unwrap complete! Moving data ...")
-        shutil.move(lines[26].split()[1], "output/" + lines[26].split()[1])
-        logging.info("Data moved to output folder!")
 
         logging.info("Process complete!")
 
@@ -218,14 +224,14 @@ class SFTP:
         self.sftp = pysftp.Connection(host, username)
         logging.info("SFTP connection established!")
 
-    def upload_results(self, local_path: str, remote_path: str, flag) -> None:
+    def upload_results(self, local_path: str, remote_path: str) -> None:
         logging.info("Uploading files ...")
         self.sftp.put_r(local_path, remote_path)
-        logging.info("All files uploaded")
+        logging.info("All files uploaded!")
 
-        with flag.get_lock():
-            flag.value = True
-        time.sleep(10)
+        logging.info("Removing uploaded files ...")
+        # <-------------------------------
+        logging.info("Files removed!")
 
     def __del__(self) -> None:
         self.sftp.close()
@@ -237,7 +243,6 @@ def main_process(args, flag):
     copernicus = Copernicus(args.user, args.passwd)
     filename1 = copernicus.get_filename(args.input_file1) + ".zip"
     filename2 = copernicus.get_filename(args.input_file2) + ".zip"
-    # storage = SFTP(args.remote_ip, args.remote_user)
 
     copernicus.download_products(
         args.input_file1, filename1, args.input_file2, filename2
@@ -245,7 +250,14 @@ def main_process(args, flag):
     for subswath in ["IW1", "IW2", "IW3"]:
         process = Process(filename1, filename2, subswath)
         process.process()
-    # storage.upload_results("output", "/home/ESAProcess/" + filename1[:4] + subswath + filename1[6:33] + filename2[17:32], flag)
+
+    # <----- send message to uploader
+    # Folders: <name>.data and snaphu_export/<name>
+    # Files: <name>.dim
+
+    with flag.get_lock():
+        flag.value = True
+    time.sleep(10)
 
 
 def main_sentry(args, flag):
@@ -280,7 +292,7 @@ def main_sentry(args, flag):
 
 if __name__ == "__main__":
     args = parse_args()
-    
+
     os.makedirs("data/", exist_ok=True)
     os.makedirs("output/snaphu_export", exist_ok=True)
 
@@ -314,18 +326,17 @@ if __name__ == "__main__":
 
     processor = ProcessWithException(target=main_process, args=(args, flag))
     sentry = ProcessWithException(target=main_sentry, args=(args, flag))
+    # uploader = ProcessWithException(target=main_upload, args=(args, flag))
 
     sentry.start()
     time.sleep(1)
     processor.start()
+    # uploader.start()
 
-    while processor.is_alive() and sentry.is_alive():
+    while processor.is_alive() and sentry.is_alive(): # and uploader.is_alive():
         time.sleep(3)
 
-    if not processor.is_alive() and not sentry.is_alive():
-        sentry.join()
-        processor.join()
-    else:
+    if processor.is_alive() or sentry.is_alive(): # or uploader.is_alive():
         if not sentry.is_alive():
             error, traceback = sentry.exception
             logging.error(f"Exception caught for sentry: {error}")
@@ -334,7 +345,12 @@ if __name__ == "__main__":
             error, traceback = processor.exception
             logging.error(f"Exception caught for processing: {error}")
             logging.error(f"{traceback}")
+        # if not uploader.is_alive():
+        #     error, traceback = uploader.exception
+        #     logging.error(f"Exception caught for uploader: {error}")
+        #     logging.error(f"{traceback}")
         sentry.kill()
         processor.kill()
+        # uploader.kill()
 
     logging.info("Goodbye!")
