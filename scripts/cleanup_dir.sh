@@ -1,1 +1,1 @@
-rm -rf output/ snaphu_export/ data/ gpt.log process.log snaphu.log usage.log
+rm -rf output/ data/ gpt.log process.log snaphu.log usage.log nohup.out

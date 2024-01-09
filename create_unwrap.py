@@ -26,19 +26,6 @@ def parse_args() -> None:
     )
     # parser.add_argument("--remote-ip", "-ri", type=str, help="Remote server IP address")
     # parser.add_argument("--remote-user", "-ru", type=str, help="Remote server username")
-    # parser.add_argument("--droplet-id", "-di", type=str, help="DigitalOcean droplet ID")
-    # parser.add_argument(
-    #     "--droplet-token",
-    #     "-dt",
-    #     type=str,
-    #     help="DigitalOcean Personal Access Token (PAT)",
-    # )
-    parser.add_argument(
-        "--subswath", "-s", type=str, default="IW1", help="Subswath to process"
-    )
-    parser.add_argument(
-        "--nProc", "-n", type=int, default=32, help="Number of processors to use"
-    )
 
     return parser.parse_args()
 
@@ -90,18 +77,21 @@ class Copernicus:
         return r.json()["access_token"]
 
     def _get_file(self, data_id: str, filename: str) -> None:
-        url = f"https://zipper.dataspace.copernicus.eu/odata/v1/Products({data_id})/$value"
-        headers = {"Authorization": f"Bearer {self.token}"}
+        if os.path.isfile(f"data/{filename}"):
+            logging.info(f"{filename} detected in directory skipping download")
+        else:
+            url = f"https://zipper.dataspace.copernicus.eu/odata/v1/Products({data_id})/$value"
+            headers = {"Authorization": f"Bearer {self.token}"}
 
-        session = requests.Session()
-        session.headers.update(headers)
-        r = session.get(url, headers=headers, stream=True)
+            session = requests.Session()
+            session.headers.update(headers)
+            r = session.get(url, headers=headers, stream=True)
 
-        with open(f"data/{filename}", "wb") as file:
-            for chunk in r.iter_content(chunk_size=8192):
-                if chunk:
-                    file.write(chunk)
-        logging.info(f"{filename} downloaded")
+            with open(f"data/{filename}", "wb") as file:
+                for chunk in r.iter_content(chunk_size=8192):
+                    if chunk:
+                        file.write(chunk)
+            logging.info(f"{filename} downloaded")
 
         # For fix https://forum.step.esa.int/t/iw3-missing-when-downloading-product-from-data-space/40035
         logging.info(f"Extracting {filename}")
@@ -138,40 +128,38 @@ class Copernicus:
 
 
 class Process:
-    def __init__(self, filename1: str, filename2: str, args) -> None:
+    def __init__(self, filename1: str, filename2: str, subswath: str) -> None:
         logging.info("Preparing processing parameters ...")
-        self.__prepare(filename1, filename2, args)
-        logging.info("XMLs updated!")
+        self.__prepare(filename1, filename2, subswath)
+        logging.info("Processing parameters updated!")
 
-    def __prepare(self, filename1: str, filename2: str, args) -> None:
-        os.makedirs("data/", exist_ok=True)
-        os.makedirs("output/snaphu_export", exist_ok=True)
-
-        # Update properties file
+    def __prepare(self, filename1: str, filename2: str, subswath: str) -> None:
+        # Update properties file for process
         prop = pyjavaproperties.Properties()
         prop.load(open("process.properties"))
 
         prop["input_file_1"] = "data/" + filename1[:-4] + "/manifest.safe"
         prop["input_file_2"] = "data/" + filename2[:-4] + "/manifest.safe"
         prop["output_file"] = (
-            "output/" + args.subswath + "Orb_Stack_Ifg_Deb_DInSAR_mrg_ML_Flt.dim"
+            "output/" + filename1[:4] + subswath + filename1[6:33] + filename2[17:33] + "Orb_Stack_Ifg_Deb_DInSAR_mrg_ML_Flt.dim"
         )
-        prop["subswath"] = args.subswath
-        prop["nProc"] = str(args.nProc)
+        prop["subswath"] = subswath
 
-        prop.store(open("data/process.properties"))
+        prop.store(open("data/process.properties", "w"))
 
     def process(self) -> None:
         logging.info("Starting to process ...")
 
         # Pre-process
-        log_file = open("gpt.log", "w")
+        log_file = open("output/gpt.log", "w")
         result = subprocess.run(
             [
                 "/usr/local/snap/bin/gpt",
-                "data/presnaphuexport.xml",
+                "TOPSAR_PreSnaphuExportIW.xml",
                 "-p",
                 "data/process.properties",
+                "-J-Xmx" + str(int(psutil.virtual_memory().total / (1024**3) * 0.75)) + "G",
+                "-Dsnap.jai.tileCacheSize=" + str(int(psutil.virtual_memory().total / (1024**3) * 0.75 * 0.5))
             ],
             stdout=log_file,
             stderr=log_file,
@@ -187,9 +175,11 @@ class Process:
         result = subprocess.run(
             [
                 "/usr/local/snap/bin/gpt",
-                "data/snaphuexport.xml",
+                "TOPSAR_SnaphuExport.xml",
                 "-p",
                 "data/process.properties",
+                "-J-Xmx" + str(int(psutil.virtual_memory().total / (1024**3) * 0.75)) + "G",
+                "-Dsnap.jai.tileCacheSize=" + str(int(psutil.virtual_memory().total / (1024**3) * 0.75 * 0.5))
             ],
             stdout=log_file,
             stderr=log_file,
@@ -205,7 +195,7 @@ class Process:
         file_snaphu = open("output/snaphu_export/snaphu.conf", "r")
         lines = file_snaphu.readlines()
 
-        log_file = open("snaphu.log", "w")
+        log_file = open("output/snaphu.log", "w")
         result = subprocess.run(
             lines[6].replace("#", "").strip(), stdout=log_file, stderr=log_file
         )
@@ -214,8 +204,8 @@ class Process:
         if result.returncode != 0:
             logging.error(f"Unwrap returned error code {result.returncode}")
             return
-        logging.info("Unwrap complete! Moving data ...")
 
+        logging.info("Unwrap complete! Moving data ...")
         shutil.move(lines[26].split()[1], "output/" + lines[26].split()[1])
         logging.info("Data moved to output folder!")
 
@@ -237,12 +227,6 @@ class SFTP:
             flag.value = True
         time.sleep(10)
 
-        # Upload log files manually to get all logs
-        self.sftp.put("process.log", remote_path)
-        self.sftp.put("usage.log", remote_path)
-        self.sftp.put("snaphu.log", remote_path)
-        self.sftp.put("gpt.log", remote_path)
-
     def __del__(self) -> None:
         self.sftp.close()
 
@@ -253,19 +237,20 @@ def main_process(args, flag):
     copernicus = Copernicus(args.user, args.passwd)
     filename1 = copernicus.get_filename(args.input_file1) + ".zip"
     filename2 = copernicus.get_filename(args.input_file2) + ".zip"
-    process = Process(filename1, filename2)
     # storage = SFTP(args.remote_ip, args.remote_user)
 
     copernicus.download_products(
         args.input_file1, filename1, args.input_file2, filename2
     )
-    process.process()
-    # storage.upload_results("output", "/home/ESAProcess/", flag)
+    for subswath in ["IW1", "IW2", "IW3"]:
+        process = Process(filename1, filename2, subswath)
+        process.process()
+    # storage.upload_results("output", "/home/ESAProcess/" + filename1[:4] + subswath + filename1[6:33] + filename2[17:32], flag)
 
 
 def main_sentry(args, flag):
     logging.info("Sentry started!")
-    file = open("usage.log", "w")
+    file = open("output/usage.log", "w")
     file.write("time,cpu,ram,disk,us,ds\n")
 
     # Get first network io
@@ -295,8 +280,12 @@ def main_sentry(args, flag):
 
 if __name__ == "__main__":
     args = parse_args()
+    
+    os.makedirs("data/", exist_ok=True)
+    os.makedirs("output/snaphu_export", exist_ok=True)
+
     logging.basicConfig(
-        filename="process.log",
+        filename="output/process.log",
         format="%(asctime)s %(levelname)s: %(message)s",
         level=logging.INFO,
         datefmt="%Y-%m-%d %H:%M:%S",
@@ -319,12 +308,6 @@ if __name__ == "__main__":
     #     sys.exit(-1)
     # if args.remote_user is None:
     #     logging.error("Provide a remote user of SFTP server with --remote-user")
-    #     sys.exit(-1)
-    # if args.droplet_id is None:
-    #     logging.error("Provide a droplet ID with --droplet-id")
-    #     sys.exit(-1)
-    # if args.droplet_token is None:
-    #     logging.error("Provide a droplet token with --droplet-token")
     #     sys.exit(-1)
 
     flag = multiprocessing.Value("b", False)
@@ -354,15 +337,4 @@ if __name__ == "__main__":
         sentry.kill()
         processor.kill()
 
-    # Send destroy command to droplet
-    # headers = {"Authorization": f"Bearer {args.token}"}
-    # response = requests.delete(
-    #     "https://api.digitalocean.com/v2/droplets/"
-    #     + args.droplet_id
-    #     + "?include_resources=true",
-    #     headers=headers,
-    #     timeout=30,
-    # )
-
-    # logging.info(f"Received response from DigitalOcean: {response.text}")
     logging.info("Goodbye!")
