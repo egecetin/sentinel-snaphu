@@ -94,7 +94,7 @@ class Copernicus:
             logging.info(f"{filename} downloaded")
 
         # For fix https://forum.step.esa.int/t/iw3-missing-when-downloading-product-from-data-space/40035
-        if (os.path.isdir(f"data/{filename[:-4]}"))
+        if os.path.isdir(f"data/{filename[:-4]}"):
             logging.info(f"{filename[:-4]} detected in directory skipping extracting")
         else:
             logging.info(f"Extracting {filename}")
@@ -135,7 +135,13 @@ class Process:
         self.filename1 = filename1
         self.filename2 = filename2
         self.subswath = subswath
-        self.output_filename = self.filename1[:4] + self.subswath + self.filename1[6:33] + self.filename2[17:33] + "Orb_Stack_Ifg_Deb_DInSAR_mrg_ML_Flt.dim"
+        self.output_filename = (
+            self.filename1[:4]
+            + self.subswath
+            + self.filename1[6:33]
+            + self.filename2[17:33]
+            + "Orb_Stack_Ifg_Deb_DInSAR_mrg_ML_Flt.dim"
+        )
 
         logging.info("Preparing processing parameters ...")
         self.__prepare()
@@ -153,7 +159,7 @@ class Process:
 
         prop.store(open("data/process.properties", "w"))
 
-    def process(self) -> None:
+    def process(self) -> str:
         logging.info("Starting to process " + self.subswath + " ...")
 
         # Pre-process
@@ -177,7 +183,7 @@ class Process:
 
         if result.returncode != 0:
             logging.error(f"GPT returned error code {result.returncode}")
-            return
+            return ""
         logging.info("Pre-process completed! Exporting snaphu ...")
 
         # Export snaphu
@@ -200,38 +206,51 @@ class Process:
 
         if result.returncode != 0:
             logging.error(f"GPT returned error code {result.returncode}")
-            return
+            return ""
         logging.info("Snaphu exported! Starting to unwrap ...")
 
         # Read snaphu command from config
-        file_snaphu = open("output/snaphu_export/" + self.output_filename[:-4] + "/snaphu.conf", "r")
+        file_snaphu = open(
+            "output/snaphu_export/" + self.output_filename[:-4] + "/snaphu.conf", "r"
+        )
         lines = file_snaphu.readlines()
 
         log_file = open("output/snaphu.log", "a")
-        result = subprocess.run(lines[6].replace("#", "").strip().split(), cwd=("output/snaphu_export/" + self.output_filename[:-4]), stdout=log_file, stderr=log_file)
+        result = subprocess.run(
+            lines[6].replace("#", "").strip().split(),
+            cwd=("output/snaphu_export/" + self.output_filename[:-4]),
+            stdout=log_file,
+            stderr=log_file,
+        )
         log_file.close()
 
         if result.returncode != 0:
             logging.error(f"Unwrap returned error code {result.returncode}")
-            return
+            return ""
 
         logging.info("Process complete!")
+        return self.output_filename[:-4]
 
 
 class SFTP:
-    def __init__(self, host: str, username: str) -> None:
+    def __init__(self, host: str, username: str, port: int) -> None:
         logging.info("Creating SFTP connection ...")
-        self.sftp = pysftp.Connection(host, username)
+        self.sftp = pysftp.Connection(host, username, port)
         logging.info("SFTP connection established!")
 
-    def upload_results(self, local_path: str, remote_path: str) -> None:
-        logging.info("Uploading files ...")
+    def upload_files(self, local_path: str, remote_path: str) -> None:
+        logging.info(f"Uploading {local_path} ...")
         self.sftp.put_r(local_path, remote_path)
-        logging.info("All files uploaded!")
+        logging.info(f"{local_path} uploaded!")
 
-        logging.info("Removing uploaded files ...")
-        # <-------------------------------
-        logging.info("Files removed!")
+        logging.info(f"Removing {local_path} ...")
+        if os.path.isfile(local_path):
+            os.remove(local_path)
+        elif os.path.isdir(local_path):
+            shutil.rmtree(local_path)
+        else:
+            logging.warn(f"{local_path} not a file or directory")
+        logging.info(f"{local_path} removed!")
 
     def __del__(self) -> None:
         self.sftp.close()
@@ -249,11 +268,12 @@ def main_process(args, flag):
     )
     for subswath in ["IW1", "IW2", "IW3"]:
         process = Process(filename1, filename2, subswath)
-        process.process()
+        output_name = process.process()
 
-    # <----- send message to uploader
-    # Folders: <name>.data and snaphu_export/<name>
-    # Files: <name>.dim
+    # if (len(output_name)):
+    #     queue.put(output_name + ".data")
+    #     queue.put(output_name + ".dim")
+    #     queue.put("output/snaphu_export/" + output_name)
 
     with flag.get_lock():
         flag.value = True
@@ -333,10 +353,10 @@ if __name__ == "__main__":
     processor.start()
     # uploader.start()
 
-    while processor.is_alive() and sentry.is_alive(): # and uploader.is_alive():
+    while processor.is_alive() and sentry.is_alive():  # and uploader.is_alive():
         time.sleep(3)
 
-    if processor.is_alive() or sentry.is_alive(): # or uploader.is_alive():
+    if processor.is_alive() or sentry.is_alive():  # or uploader.is_alive():
         if not sentry.is_alive():
             error, traceback = sentry.exception
             logging.error(f"Exception caught for sentry: {error}")
