@@ -157,7 +157,7 @@ class Process:
         logging.info("Starting to process " + self.subswath + " ...")
 
         # Pre-process
-        log_file = open("output/gpt.log", "w")
+        log_file = open("output/gpt.log", "a")
         result = subprocess.run(
             [
                 "/usr/local/snap/bin/gpt",
@@ -207,7 +207,7 @@ class Process:
         file_snaphu = open("output/snaphu_export/" + self.output_filename[:-4] + "/snaphu.conf", "r")
         lines = file_snaphu.readlines()
 
-        log_file = open("output/snaphu.log", "w")
+        log_file = open("output/snaphu.log", "a")
         result = subprocess.run(lines[6].replace("#", "").strip().split(), cwd=("output/snaphu_export/" + self.output_filename[:-4]), stdout=log_file, stderr=log_file)
         log_file.close()
 
@@ -262,7 +262,7 @@ def main_process(args, flag):
 
 def main_sentry(args, flag):
     logging.info("Sentry started!")
-    file = open("output/usage.log", "w")
+    file = open("output/usage.log", "a")
     file.write("time,cpu,ram,disk,us,ds\n")
 
     # Get first network io
